@@ -192,20 +192,36 @@ fn fetch_unread_blocking(acc: &Account) -> Result<usize, String> {
     Ok(uids.len())
 }
 
-fn notify_new_mail(account: &str, delta: usize, total: usize) {
+fn notify_new_mail(account: &str, delta: usize, total: usize, mail_client: &str) {
     let body = if delta == 1 {
         format!("1 new message in {account}\n({total} unread total)")
     } else {
         format!("{delta} new messages in {account}\n({total} unread total)")
     };
-    let _ = Notification::new()
+    let result = Notification::new()
         .summary("New mail")
         .body(&body)
         .icon("mail-unread-symbolic")
         .appname("tb-tray")
         .urgency(Urgency::Normal)
         .hint(Hint::Category("email.arrived".into()))
+        // "default" fires when the user clicks the notification body itself.
+        // Adding an explicit "open" action gives a button on daemons that
+        // render them (e.g. KDE); on Cosmic the body-click is enough.
+        .action("default", "Open")
+        .action("open", "Open")
         .show();
+
+    // Block this (blocking-pool) thread until the user clicks or the
+    // notification is closed. Spawn the mail client only on a real click.
+    let mc = mail_client.to_string();
+    if let Ok(handle) = result {
+        handle.wait_for_action(|action| {
+            if matches!(action, "default" | "open") {
+                let _ = std::process::Command::new(&mc).spawn();
+            }
+        });
+    }
 }
 
 fn run_configure() -> Result<(), Box<dyn std::error::Error>> {
@@ -348,9 +364,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         drop(map);
 
                         // Notify only if unread count grew (not on first poll).
+                        // notify-rust's .show() calls block_on internally for the
+                        // D-Bus call, which panics inside a tokio runtime — so we
+                        // run it on the blocking pool.
                         if let Some(p) = prev {
                             if n > p {
-                                notify_new_mail(&acc_name, n - p, total);
+                                let acc_n = acc_name.clone();
+                                let delta = n - p;
+                                let mc = state.mail_client.clone();
+                                // detached: wait_for_action blocks for a long
+                                // time, we don't want to hold the poll loop.
+                                tokio::task::spawn_blocking(move || {
+                                    notify_new_mail(&acc_n, delta, total, &mc);
+                                });
                             }
                         }
 

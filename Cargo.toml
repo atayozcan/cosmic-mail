@@ -1,0 +1,21 @@
+[package]
+name = "tb-tray"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+ksni = "0.3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+imap = "2"
+native-tls = "0.2"
+notify-rust = "4"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+dirs = "5"
+rpassword = "7"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

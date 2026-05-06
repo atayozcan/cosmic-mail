@@ -1,7 +1,18 @@
 [package]
 name = "tb-tray"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
+license = "MIT"
+description = "Wayland-native StatusNotifierItem IMAP mail notifier with libcosmic settings GUI"
+repository = "https://github.com/atayozcan/tb-tray"
+
+[lib]
+name = "tb_tray"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tb-tray"
+path = "src/main.rs"
 
 [dependencies]
 ksni = "0.3"
@@ -13,6 +24,17 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 dirs = "5"
 rpassword = "7"
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+rev = "0e0960f3c79138b445ae84f7ac6f91d4db36e8b4"
+default-features = false
+features = [
+    "advanced-shaping",
+    "tokio",
+    "wgpu",
+    "winit",
+]
 
 [profile.release]
 opt-level = "z"

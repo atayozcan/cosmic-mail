@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=tb-tray Settings
+GenericName=Mail Notifier Settings
+Comment=Configure tb-tray IMAP accounts and behavior
+Exec=@BIN@ --settings
+Icon=tb-tray-symbolic
+Terminal=false
+Categories=Settings;Network;Email;
+Keywords=mail;email;imap;tray;notifier;settings;preferences;
+StartupNotify=true

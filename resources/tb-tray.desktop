@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=tb-tray
+GenericName=Mail Notifier
+Comment=Wayland-native IMAP mail notifier with tray icon
+Exec=@BIN@
+Icon=tb-tray-symbolic
+Terminal=false
+Categories=Network;Email;
+Keywords=mail;email;imap;tray;notifier;
+StartupNotify=false

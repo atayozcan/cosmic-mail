@@ -1,10 +1,11 @@
 # tb-tray
 
-A minimal, Wayland-native (StatusNotifierItem) IMAP mail notifier for Linux.
+A minimal, Wayland-native (StatusNotifierItem) IMAP mail notifier for Linux,
+plus a libcosmic settings GUI.
 
-Originally built for [COSMIC](https://github.com/pop-os/cosmic-epoch) but works
-on any DE that consumes the `org.kde.StatusNotifierItem` D-Bus protocol (KDE,
-Sway with `waybar`, Hyprland, etc).
+Originally built for [COSMIC](https://github.com/pop-os/cosmic-epoch) but the
+tray daemon works on any DE that consumes the `org.kde.StatusNotifierItem`
+D-Bus protocol (KDE, Sway with `waybar`, Hyprland, etc).
 
 It does **one** thing: poll IMAP, fire a desktop notification when new mail
 arrives, show the unread total in the tray. Click the tray icon → launch your
@@ -34,32 +35,66 @@ launch Thunderbird only when the user actually wants to read mail.
 - StatusNotifierItem tray icon (Wayland-native, no X11 deps)
 - Multi-account IMAP polling over TLS (`UID SEARCH UNSEEN`)
 - Desktop notification on unread-count delta (no spam on first poll)
-- Tray icon switches between `mail-read-symbolic` and `mail-unread-symbolic`
-- Tray menu: Open mail client / Edit Config / Open Config Folder / Quit
-- `--configure` interactive setup (writes `~/.config/tb-tray/config.toml`
-  with mode 0600)
-- ~2 MB binary, ~15 MB RSS at runtime
+- Symbolic monochrome tray icon (recolored by your COSMIC / GTK theme)
+  with read / unread variants
+- Tray menu: Open Mail / Settings… / Quit
+- **libcosmic settings GUI** — `tb-tray --settings` (also reachable from
+  the tray menu and the app launcher) edits accounts, mail client, poll
+  interval, autostart toggle without touching TOML
+- **Autostart toggle** — writes/removes `~/.config/autostart/tb-tray.desktop`
+- App-menu launcher with symbolic icon (installed to `~/.local/share`)
+- Headless `--configure` CLI fallback for SSH / minimal setups
+- Single binary; tray, settings GUI, and CLI all live in `tb-tray`
 
 ## Install
+
+The provided `install.sh` builds and places everything under `~/.local`:
 
 ```sh
 git clone https://github.com/atayozcan/tb-tray
 cd tb-tray
+./install.sh
+```
+
+That installs:
+
+| Path | What |
+| --- | --- |
+| `~/.local/bin/tb-tray` | single binary (daemon + GUI + CLI) |
+| `~/.local/share/icons/hicolor/scalable/apps/tb-tray*-symbolic.svg` | symbolic tray + app icons |
+| `~/.local/share/applications/tb-tray*.desktop` | app-menu launchers (absolute Exec= paths) |
+
+The launcher `.desktop` files are templated with the absolute binary path
+at install time, so they keep working even when your desktop session's
+PATH doesn't include `~/.local/bin`.
+
+`./install.sh` cleans up any artifacts from earlier installs (older
+colored icons, a separate `tb-tray-settings` binary, etc.) before
+laying down the new files.
+
+Run `./install.sh --uninstall` to remove every file the installer wrote
+(including any autostart entry).
+
+### Build deps (Arch)
+
+`pkexec pacman -S --needed rust pkgconf libxkbcommon wayland mesa vulkan-icd-loader fontconfig freetype2`
+
+### Manual build
+
+```sh
 cargo build --release
-install -m 0755 target/release/tb-tray ~/.local/bin/tb-tray
+# binary lands at target/release/tb-tray
 ```
 
 ## Configure
 
-Either:
+**GUI (recommended):** launch *tb-tray Settings* from the app menu, or run
+`tb-tray --settings`, or pick *Settings…* from the tray menu. Edit
+accounts, toggle autostart, hit *Save*.
 
-```sh
-tb-tray --configure
-```
+**CLI:** `tb-tray --configure` prompts interactively for one account.
 
-…which prompts interactively for server / port / username / password / folder.
-
-Or hand-write `~/.config/tb-tray/config.toml`:
+**Hand-edit:** `~/.config/tb-tray/config.toml`:
 
 ```toml
 mail_client    = "/usr/bin/thunderbird"
@@ -76,8 +111,8 @@ folder   = "INBOX"
 # add more [[account]] blocks as needed
 ```
 
-Always `chmod 600` the config — passwords are stored plaintext. A future
-version may move them to `secret-service` / libsecret.
+Either tool writes the file with mode `0600` — passwords are stored
+plaintext. A future version may move them to `secret-service` / libsecret.
 
 ## Run
 
@@ -85,18 +120,8 @@ version may move them to `secret-service` / libsecret.
 tb-tray &
 ```
 
-Or as an autostart entry at `~/.config/autostart/tb-tray.desktop`:
-
-```ini
-[Desktop Entry]
-Type=Application
-Name=tb-tray
-Exec=/home/USER/.local/bin/tb-tray
-Icon=mail-unread-symbolic
-StartupNotify=false
-X-GNOME-Autostart-enabled=true
-X-GNOME-Autostart-Delay=8
-```
+Or enable the *Start tb-tray on login* toggle in settings (writes
+`~/.config/autostart/tb-tray.desktop`).
 
 ## License
 

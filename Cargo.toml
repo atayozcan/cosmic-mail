@@ -23,7 +23,6 @@ notify-rust = "4"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 dirs = "5"
-rpassword = "7"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"

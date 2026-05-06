@@ -1,7 +1,7 @@
 # tb-tray
 
 A minimal, Wayland-native (StatusNotifierItem) IMAP mail notifier for Linux,
-plus a libcosmic settings GUI.
+with a libcosmic settings GUI.
 
 Originally built for [COSMIC](https://github.com/pop-os/cosmic-epoch) but the
 tray daemon works on any DE that consumes the `org.kde.StatusNotifierItem`
@@ -38,17 +38,13 @@ launch Thunderbird only when the user actually wants to read mail.
 - Symbolic monochrome tray icon (recolored by your COSMIC / GTK theme)
   with read / unread variants
 - Tray menu: Open Mail / Settings… / Quit
-- **libcosmic settings GUI** — `tb-tray --settings` (also reachable from
-  the tray menu and the app launcher) edits accounts, mail client, poll
-  interval, autostart toggle without touching TOML
-- **Autostart toggle** — writes/removes `~/.config/autostart/tb-tray.desktop`
-- App-menu launcher with symbolic icon (installed to `~/.local/share`)
-- Headless `--configure` CLI fallback for SSH / minimal setups
-- Single binary; tray, settings GUI, and CLI all live in `tb-tray`
+- libcosmic settings GUI for accounts, mail client, poll interval,
+  autostart toggle — reached from the tray icon's menu, or shown
+  automatically on first run
+- Autostart toggle writes/removes `~/.config/autostart/tb-tray.desktop`
+- Single binary, single launcher
 
 ## Install
-
-The provided `install.sh` builds and places everything under `~/.local`:
 
 ```sh
 git clone https://github.com/atayozcan/tb-tray
@@ -60,20 +56,22 @@ That installs:
 
 | Path | What |
 | --- | --- |
-| `~/.local/bin/tb-tray` | single binary (daemon + GUI + CLI) |
-| `~/.local/share/icons/hicolor/scalable/apps/tb-tray*-symbolic.svg` | symbolic tray + app icons |
-| `~/.local/share/applications/tb-tray*.desktop` | app-menu launchers (absolute Exec= paths) |
+| `~/.local/bin/tb-tray` | the binary |
+| `~/.local/share/icons/hicolor/scalable/apps/tb-tray{,-unread}-symbolic.svg` | tray + app icon |
+| `~/.local/share/applications/tb-tray.desktop` | app-menu launcher |
 
-The launcher `.desktop` files are templated with the absolute binary path
-at install time, so they keep working even when your desktop session's
-PATH doesn't include `~/.local/bin`.
+Per-user, no root needed. The launcher's `Exec=` is templated with the
+absolute binary path at install time so it keeps working even when your
+desktop session's PATH doesn't include `~/.local/bin`. The script cleans
+up artifacts from earlier installs (older colored icons, the obsolete
+second binary, etc.) before laying down the new files, and (re)starts
+the daemon so the new version is live immediately.
 
-`./install.sh` cleans up any artifacts from earlier installs (older
-colored icons, a separate `tb-tray-settings` binary, etc.) before
-laying down the new files.
+To uninstall:
 
-Run `./install.sh --uninstall` to remove every file the installer wrote
-(including any autostart entry).
+```sh
+./uninstall.sh
+```
 
 ### Build deps (Arch)
 
@@ -88,13 +86,12 @@ cargo build --release
 
 ## Configure
 
-**GUI (recommended):** launch *tb-tray Settings* from the app menu, or run
-`tb-tray --settings`, or pick *Settings…* from the tray menu. Edit
-accounts, toggle autostart, hit *Save*.
+Run `tb-tray` (or click the launcher). On first run, with no config, the
+settings window opens automatically — add an account, set the mail
+client, toggle autostart, hit *Save*. Subsequent runs start the tray
+daemon. Reach settings later from the tray icon's *Settings…* menu.
 
-**CLI:** `tb-tray --configure` prompts interactively for one account.
-
-**Hand-edit:** `~/.config/tb-tray/config.toml`:
+If you'd rather hand-edit `~/.config/tb-tray/config.toml`:
 
 ```toml
 mail_client    = "/usr/bin/thunderbird"
@@ -111,17 +108,8 @@ folder   = "INBOX"
 # add more [[account]] blocks as needed
 ```
 
-Either tool writes the file with mode `0600` — passwords are stored
+The settings GUI writes the file with mode `0600` — passwords are stored
 plaintext. A future version may move them to `secret-service` / libsecret.
-
-## Run
-
-```sh
-tb-tray &
-```
-
-Or enable the *Start tb-tray on login* toggle in settings (writes
-`~/.config/autostart/tb-tray.desktop`).
 
 ## License
 

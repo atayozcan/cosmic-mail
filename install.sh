@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# tb-tray installer — places the binary, icons, and desktop launchers
+# tb-tray installer — places the binary, icons, and desktop launcher
 # under $XDG_DATA_HOME (or ~/.local/share). Per-user, no root required.
 #
 # Cleans up artifacts from previous installs (old colored icons, the
-# obsolete tb-tray-settings binary, etc.) before installing the new ones.
+# obsolete tb-tray-settings binary, the second .desktop launcher, etc.)
+# before installing the new ones.
 #
 # Usage:
-#   ./install.sh             # build release + install
-#   ./install.sh --uninstall # remove every file this script ever wrote
+#   ./install.sh    # build + install + (re)start daemon
+#   ./uninstall.sh  # remove everything this installer wrote
 
 set -euo pipefail
 
@@ -71,15 +72,16 @@ stop_running() {
 }
 
 start_daemon() {
-    echo "tb-tray: starting daemon..."
-    # nohup + redirected fds so the daemon survives this script's exit
-    # and doesn't hold the terminal open.
+    echo "tb-tray: starting..."
+    # nohup + redirected fds so the process survives this script's exit
+    # and doesn't hold the terminal open. On first run with no config,
+    # this opens the settings window; otherwise it's the tray daemon.
     nohup "$BIN_DIR/tb-tray" </dev/null >/dev/null 2>&1 &
     sleep 0.3
     if pgrep -x tb-tray >/dev/null 2>&1; then
-        echo "tb-tray: daemon running."
+        echo "tb-tray: running."
     else
-        echo "tb-tray: warning — daemon did not start. Run '$BIN_DIR/tb-tray' manually to see the error."
+        echo "tb-tray: warning — process did not start. Run '$BIN_DIR/tb-tray' manually to see the error."
     fi
 }
 
@@ -115,14 +117,12 @@ install -m 0755 target/release/tb-tray "$BIN_DIR/tb-tray"
 install -m 0644 resources/icons/tb-tray-symbolic.svg "$ICON_DIR/tb-tray-symbolic.svg"
 install -m 0644 resources/icons/tb-tray-unread-symbolic.svg "$ICON_DIR/tb-tray-unread-symbolic.svg"
 
-# Substitute the absolute binary path into Exec= so launchers don't
+# Substitute the absolute binary path into Exec= so the launcher doesn't
 # depend on the desktop session's PATH (which may not include
 # ~/.local/bin even when the user's shell does).
 sed "s|@BIN@|$BIN_DIR/tb-tray|g" resources/tb-tray.desktop \
     > "$APPS_DIR/tb-tray.desktop"
-sed "s|@BIN@|$BIN_DIR/tb-tray|g" resources/tb-tray-settings.desktop \
-    > "$APPS_DIR/tb-tray-settings.desktop"
-chmod 0644 "$APPS_DIR/tb-tray.desktop" "$APPS_DIR/tb-tray-settings.desktop"
+chmod 0644 "$APPS_DIR/tb-tray.desktop"
 
 # If the user previously enabled autostart, rewrite that entry too —
 # it likely points at the old binary path or the obsolete colored icon.
@@ -158,10 +158,11 @@ tb-tray: installed.
 
   Binary:   $BIN_DIR/tb-tray
   Icons:    $ICON_DIR/tb-tray{,-unread}-symbolic.svg
-  Launcher: $APPS_DIR/tb-tray{,-settings}.desktop
+  Launcher: $APPS_DIR/tb-tray.desktop
 
-Modes:
-  tb-tray              run the tray daemon (auto-started above)
-  tb-tray --settings   open the libcosmic settings GUI
-  tb-tray --configure  CLI prompt for first-run setup
+Run \`tb-tray\` (or click the launcher) to start. On first run with no
+config, the settings window opens for setup; afterwards the tray
+daemon runs and you can reach settings again from the tray icon's menu.
+
+To uninstall: ./uninstall.sh
 EOF

@@ -1,12 +1,12 @@
 // tb-tray: minimal Wayland-native (StatusNotifierItem) IMAP mail notifier.
 //
-// Single binary, three modes:
-//   tb-tray              run the tray daemon (default)
-//   tb-tray --settings   open the libcosmic settings GUI
-//   tb-tray --configure  CLI prompt for first-run setup
-//
-// The daemon's "Settings…" menu item re-launches the binary with --settings
-// so the GUI never blocks the polling loop.
+// Single binary, single user-facing entry point: `tb-tray`.
+//   - On first run with no config, the settings GUI opens for setup.
+//   - Otherwise, the tray daemon runs.
+//   - The tray menu's "Settings…" item re-execs the binary with the
+//     internal `--settings` flag to open the GUI in a child process,
+//     so the iced/wgpu window doesn't have to share the tokio+ksni
+//     event loop.
 
 use ksni::{menu::*, Tray, TrayMethods};
 use notify_rust::{Hint, Notification, Urgency};
@@ -146,62 +146,15 @@ fn notify_new_mail(account: &str, delta: usize, total: usize, mail_client: &str)
     }
 }
 
-fn run_configure() -> Result<(), Box<dyn std::error::Error>> {
-    use std::io::{self, BufRead, Write};
-
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
-    let mut prompt = |msg: &str, default: &str| -> io::Result<String> {
-        if default.is_empty() {
-            print!("{msg}: ");
-        } else {
-            print!("{msg} [{default}]: ");
-        }
-        stdout.flush()?;
-        let mut s = String::new();
-        stdin.lock().read_line(&mut s)?;
-        let s = s.trim().to_string();
-        Ok(if s.is_empty() { default.into() } else { s })
-    };
-
-    println!("tb-tray configure: enter IMAP credentials. Press enter to accept defaults.\n");
-    let name = prompt("Account name", "Personal")?;
-    let server = prompt("IMAP server", "")?;
-    let port: u16 = prompt("IMAP port", "993")?.parse().unwrap_or(993);
-    let username = prompt("Username (full email)", "")?;
-    let password = rpassword::prompt_password("Password (hidden): ")?;
-    let folder = prompt("Folder", "INBOX")?;
-    let mail_client = prompt("Mail client to launch on click", "/usr/bin/thunderbird")?;
-    let interval: u64 = prompt("Poll interval seconds", "60")?.parse().unwrap_or(60);
-
-    let cfg = config::Config {
-        mail_client,
-        interval_secs: interval,
-        accounts: vec![Account {
-            name,
-            server,
-            port,
-            username,
-            password,
-            folder,
-        }],
-    };
-    let path = config_path();
-    config::write(&path, &cfg)?;
-
-    println!("\ntb-tray: wrote {} (mode 0600)", path.display());
-    println!("Start the tray with: tb-tray");
-    Ok(())
-}
-
 fn print_help() {
-    println!("tb-tray: minimal IMAP mail notifier with a Wayland-native tray.");
+    println!("tb-tray: Wayland-native IMAP mail notifier.");
     println!();
-    println!("Usage:");
-    println!("  tb-tray              run the tray service");
-    println!("  tb-tray --settings   open the libcosmic settings GUI");
-    println!("  tb-tray --configure  interactively write ~/.config/tb-tray/config.toml");
-    println!("  tb-tray --help       this help");
+    println!("Usage: tb-tray");
+    println!();
+    println!("  On first run with no config, the settings window opens so");
+    println!("  you can add an account. After that, running tb-tray starts");
+    println!("  the tray daemon. Reach settings later from the tray icon's");
+    println!("  menu.");
 }
 
 fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
@@ -214,14 +167,6 @@ fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn daemon_main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg_path = config_path();
-    if !cfg_path.exists() {
-        config::write_sample(&cfg_path)?;
-        eprintln!("tb-tray: wrote sample config to {}", cfg_path.display());
-        eprintln!("tb-tray: run `tb-tray --settings` for the GUI editor,");
-        eprintln!("         or `tb-tray --configure` for the CLI prompt,");
-        eprintln!("         or edit the file manually, then restart.");
-        return Ok(());
-    }
     let cfg = config::read(&cfg_path).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
     if cfg.accounts.is_empty() {
         eprintln!("tb-tray: no [[account]] blocks in config — nothing to poll.");
@@ -291,9 +236,25 @@ async fn daemon_main() -> Result<(), Box<dyn std::error::Error>> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        None => run_daemon(),
-        Some("--settings") | Some("-s") => settings_ui::run().map_err(|e| e.into()),
-        Some("--configure") | Some("-c") => run_configure(),
+        None => {
+            // First-run / smart default: if there's no config yet, open
+            // the settings GUI so the user can add an account. After the
+            // window closes, fall through to daemon mode if a config now
+            // exists — so a fresh `tb-tray` invocation does the right
+            // thing without any flags.
+            if !config_path().exists() {
+                settings_ui::run().map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            }
+            if config_path().exists() {
+                run_daemon()
+            } else {
+                eprintln!("tb-tray: no config saved; exiting.");
+                Ok(())
+            }
+        }
+        // Internal: the tray menu re-execs itself with this flag so the
+        // GUI runs in its own process. Not advertised in --help.
+        Some("--settings") => settings_ui::run().map_err(|e| e.into()),
         Some("--help") | Some("-h") => {
             print_help();
             Ok(())

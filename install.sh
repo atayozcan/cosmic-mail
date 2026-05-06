@@ -54,8 +54,38 @@ refresh_caches() {
     fi
 }
 
+# Stop any running tb-tray (daemon and/or settings window). pkill -x
+# matches by the 15-char comm name, which is just "tb-tray" for every
+# invocation regardless of args, so this catches both modes.
+stop_running() {
+    if pgrep -x tb-tray >/dev/null 2>&1; then
+        echo "tb-tray: stopping running instance(s)..."
+        pkill -x tb-tray 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            pgrep -x tb-tray >/dev/null 2>&1 || return 0
+            sleep 0.2
+        done
+        pkill -9 -x tb-tray 2>/dev/null || true
+        sleep 0.2
+    fi
+}
+
+start_daemon() {
+    echo "tb-tray: starting daemon..."
+    # nohup + redirected fds so the daemon survives this script's exit
+    # and doesn't hold the terminal open.
+    nohup "$BIN_DIR/tb-tray" </dev/null >/dev/null 2>&1 &
+    sleep 0.3
+    if pgrep -x tb-tray >/dev/null 2>&1; then
+        echo "tb-tray: daemon running."
+    else
+        echo "tb-tray: warning — daemon did not start. Run '$BIN_DIR/tb-tray' manually to see the error."
+    fi
+}
+
 uninstall() {
     echo "tb-tray: uninstalling..."
+    stop_running
     clean_old_artifacts
     rm -f "$AUTOSTART_DIR/tb-tray.desktop"
     refresh_caches
@@ -69,6 +99,12 @@ fi
 
 echo "tb-tray: building (cargo build --release)..."
 cargo build --release
+
+# Stop the running daemon BEFORE swapping the binary so we can launch
+# the new one cleanly at the end. (Linux lets us overwrite a running
+# binary, but the in-memory process keeps using the old code, which is
+# why a stale tray menu sticks around after a re-install.)
+stop_running
 
 echo "tb-tray: cleaning previous install..."
 clean_old_artifacts
@@ -110,6 +146,7 @@ EOF
 fi
 
 refresh_caches
+start_daemon
 
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
@@ -124,10 +161,7 @@ tb-tray: installed.
   Launcher: $APPS_DIR/tb-tray{,-settings}.desktop
 
 Modes:
-  tb-tray              run the tray daemon
+  tb-tray              run the tray daemon (auto-started above)
   tb-tray --settings   open the libcosmic settings GUI
   tb-tray --configure  CLI prompt for first-run setup
-
-Try it now:
-  $BIN_DIR/tb-tray --settings
 EOF

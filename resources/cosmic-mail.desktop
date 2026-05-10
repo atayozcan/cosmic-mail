@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=Mail
+Comment=JMAP unread-mail panel applet
+Type=Application
+Exec=@BIN@
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Mail;Email;Notify;Unread;JMAP;
+Icon=cosmic-mail-symbolic
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicShrinkable=true
+X-HostWaylandDisplay=true
+X-CosmicHoverPopup=Auto

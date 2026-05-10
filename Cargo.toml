@@ -1,28 +1,35 @@
 [package]
-name = "tb-tray"
-version = "0.3.0"
+name = "cosmic-mail"
+version = "0.8.0"
 edition = "2021"
 license = "MIT"
-description = "Wayland-native StatusNotifierItem IMAP mail notifier with libcosmic settings GUI"
-repository = "https://github.com/atayozcan/tb-tray"
+description = "Wayland-native COSMIC panel applet for JMAP unread-mail notifications"
+repository = "https://github.com/atayozcan/cosmic-mail"
 
 [lib]
-name = "tb_tray"
+name = "cosmic_mail"
 path = "src/lib.rs"
 
 [[bin]]
-name = "tb-tray"
+name = "cosmic-mail"
 path = "src/main.rs"
 
+[[bin]]
+name = "cosmic-mail-settings"
+path = "src/bin/cosmic-mail-settings.rs"
+
 [dependencies]
-ksni = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
-imap = "2"
-native-tls = "0.2"
 notify-rust = "4"
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
-dirs = "5"
+toml = "1"
+dirs = "6"
+jmap-client = { version = "0.4.1", default-features = false, features = ["async", "aws_lc_rs"] }
+futures-util = "0.3"
+secret-service = { version = "5.1.0", features = ["rt-tokio-crypto-rust"] }
+i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
+i18n-embed-fl = "0.10"
+rust-embed = "8"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
@@ -30,13 +37,21 @@ rev = "0e0960f3c79138b445ae84f7ac6f91d4db36e8b4"
 default-features = false
 features = [
     "advanced-shaping",
+    "applet",
     "tokio",
     "wgpu",
     "winit",
 ]
+
+[dependencies.cosmic-config]
+git = "https://github.com/pop-os/libcosmic.git"
+rev = "0e0960f3c79138b445ae84f7ac6f91d4db36e8b4"
 
 [profile.release]
 opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
+
+[patch.crates-io]
+proc-macro-error2 = { git = "https://github.com/fgardt/proc-macro-error-2", rev = "53ff94b61c678593158db1a3d50269c6f0de0db7" }

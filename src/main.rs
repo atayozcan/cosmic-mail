@@ -19,7 +19,7 @@ use cosmic::iced::platform_specific::shell::wayland::commands::popup::{destroy_p
 use cosmic::iced::{event, keyboard, stream, window, Event, Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 use std::time::Duration;
 
@@ -45,6 +45,8 @@ pub enum Message {
     UnreadUpdated { account: String, count: usize },
     /// Per-account watcher hit a fatal error — surface via a toast/log.
     AccountError { account: String, error: String },
+    /// accounts.toml changed on disk — re-read and refresh subscriptions.
+    AccountsChanged,
     Noop,
 }
 
@@ -56,7 +58,11 @@ pub struct App {
     unread: HashMap<String, usize>,
     /// Most recent error per account, to render in the popover.
     errors: HashMap<String, String>,
-    /// Account list snapshot loaded at init.
+    /// Accounts that have produced at least one tally. Used to
+    /// suppress the desktop notification on the first poll after
+    /// connect, so we don't spam on startup.
+    seeded: HashSet<String>,
+    /// Account list snapshot, refreshed when accounts.toml changes.
     accounts: Vec<Account>,
 }
 
@@ -97,6 +103,7 @@ impl cosmic::Application for App {
                 popup: None,
                 unread: HashMap::new(),
                 errors: HashMap::new(),
+                seeded: HashSet::new(),
                 accounts,
             },
             Task::none(),
@@ -138,11 +145,42 @@ impl cosmic::Application for App {
             }
             Message::UnreadUpdated { account, count } => {
                 self.errors.remove(&account);
-                self.unread.insert(account, count);
+                let previous = self.unread.get(&account).copied();
+                self.unread.insert(account.clone(), count);
+                // Only notify after the first successful tally for this
+                // account — initial connect always produces an UnreadUpdated
+                // and we don't want to fire a notification just because the
+                // applet started.
+                if self.seeded.contains(&account) {
+                    if let Some(prev) = previous {
+                        if count > prev {
+                            let delta = count - prev;
+                            let total = self.total_unread();
+                            spawn_unread_notification(account.clone(), delta, total);
+                        }
+                    }
+                } else {
+                    self.seeded.insert(account);
+                }
                 Task::none()
             }
             Message::AccountError { account, error } => {
                 self.errors.insert(account, error);
+                Task::none()
+            }
+            Message::AccountsChanged => {
+                let new_accounts = accounts::read(&accounts_path())
+                    .map(|f| f.accounts)
+                    .unwrap_or_default();
+                if new_accounts == self.accounts {
+                    return Task::none();
+                }
+                let names: HashSet<String> =
+                    new_accounts.iter().map(|a| a.name.clone()).collect();
+                self.unread.retain(|k, _| names.contains(k));
+                self.errors.retain(|k, _| names.contains(k));
+                self.seeded.retain(|k| names.contains(k));
+                self.accounts = new_accounts;
                 Task::none()
             }
             Message::Noop => Task::none(),
@@ -232,18 +270,69 @@ impl cosmic::Application for App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        // One subscription per account, plus an Esc-to-close hook.
-        // Each per-account stream connects, runs the JMAP push +
-        // heartbeat loop, and emits UnreadUpdated / AccountError as
-        // it learns things. Reconnect with exponential backoff lives
-        // inside the closure.
-        let mut subs: Vec<Subscription<Message>> = Vec::with_capacity(self.accounts.len() + 1);
+        // One subscription per account, plus an Esc-to-close hook and
+        // an accounts.toml mtime watcher that fires AccountsChanged when
+        // the settings GUI writes the file. Each per-account stream
+        // connects, runs the JMAP push + heartbeat loop, and emits
+        // UnreadUpdated / AccountError as it learns things. Reconnect
+        // with exponential backoff lives inside the closure.
+        let mut subs: Vec<Subscription<Message>> = Vec::with_capacity(self.accounts.len() + 2);
         for acc in &self.accounts {
             subs.push(account_subscription(acc.clone()));
         }
         subs.push(escape_subscription());
+        subs.push(accounts_file_subscription());
         Subscription::batch(subs)
     }
+}
+
+/// Fire a desktop notification for new mail in `account`. Spawned on a
+/// blocking thread because `notify_rust::Notification::show` makes a
+/// synchronous D-Bus call.
+fn spawn_unread_notification(account: String, delta: usize, total: usize) {
+    std::thread::spawn(move || {
+        let summary = fl!("notify-summary");
+        let body = if delta == 1 {
+            fl!("notify-body-one", account = account.as_str(), total = total)
+        } else {
+            fl!(
+                "notify-body-many",
+                delta = delta,
+                account = account.as_str(),
+                total = total
+            )
+        };
+        let _ = notify_rust::Notification::new()
+            .summary(&summary)
+            .body(&body)
+            .icon(ICON_UNREAD)
+            .show();
+    });
+}
+
+/// Watch accounts.toml for mtime changes and emit AccountsChanged when
+/// it moves. Five-second cadence is cheap (one stat per tick) and well
+/// below human-perceptible delay after Save in the settings GUI.
+fn accounts_file_subscription() -> Subscription<Message> {
+    Subscription::run(|| {
+        stream::channel(4, |mut output: mpsc::Sender<Message>| async move {
+            use cosmic::iced::futures::SinkExt;
+            let path = accounts_path();
+            let mut last_mtime = std::fs::metadata(&path)
+                .ok()
+                .and_then(|m| m.modified().ok());
+            loop {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                let mtime = std::fs::metadata(&path)
+                    .ok()
+                    .and_then(|m| m.modified().ok());
+                if mtime != last_mtime {
+                    last_mtime = mtime;
+                    let _ = output.send(Message::AccountsChanged).await;
+                }
+            }
+        })
+    })
 }
 
 /// Per-account JMAP watcher subscription. Connects, does an initial
